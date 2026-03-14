@@ -37,6 +37,7 @@ class BackgroundVideoReader:
 
     def stop(self):
         self.running = False
+        self.shutdown_event.set()  # Trigger all stream generators checking this event to stop
         if self.thread and self.thread.is_alive():
             self.thread.join()
         if self.cap:

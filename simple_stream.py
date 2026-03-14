@@ -1,6 +1,5 @@
 import argparse
 import asyncio
-import signal
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -20,27 +19,19 @@ shutdown_event = asyncio.Event()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger = ResourceLogger(log_interval=10)
-    logger.start()
+    res_logger = ResourceLogger(log_interval=10)
+    res_logger.start()
 
     # Start the video reader background thread
     video_reader = BackgroundVideoReader(app.state.video_path, shutdown_event)
     video_reader.start()
     app.state.video_reader = video_reader
 
-    loop = asyncio.get_event_loop()
-
-    def handle_exit(*args):
-        shutdown_event.set()
-
-    loop.add_signal_handler(signal.SIGINT, handle_exit)
-    loop.add_signal_handler(signal.SIGTERM, handle_exit)
-
     try:
         yield
     finally:
         video_reader.stop()
-        logger.stop()
+        res_logger.stop()
 
 app = FastAPI(title="Simple Video Stream", lifespan=lifespan)
 app.state.video_path = "videos/street.mp4"
@@ -56,29 +47,30 @@ async def generate_frames(request: Request):
     last_log_time = time.time()
 
     try:
-        while True:
-            # Stop if server is shutting down or client disconnected
-            if shutdown_event.is_set():
-                break
-            if await request.is_disconnected():
+        while not shutdown_event.is_set():
+            server = getattr(request.app.state, "server", None)
+            if server and server.should_exit:
                 break
 
-            # Read latest frame from queue, don't pop
+            if await request.is_disconnected():
+                logger.info(f"[Client {request_id}] Client disconnected.")
+                break
+
             frame = reader.get_latest_frame()
             if frame is None:
                 await asyncio.sleep(0.01)
                 continue
-            
+
             ret, buffer = cv2.imencode('.jpg', frame)
             if not ret:
                 await asyncio.sleep(0.01)
                 continue
-                
+
             frame_bytes = buffer.tobytes()
-            
+
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-            
+
             frames_sent += 1
             current_time = time.time()
             elapsed = current_time - last_log_time
@@ -87,20 +79,16 @@ async def generate_frames(request: Request):
                 logger.info(f"[Client {request_id}] Streaming at {fps:.2f} FPS")
                 frames_sent = 0
                 last_log_time = current_time
-            
-            # Race between frame delay and shutdown
+
+            # Sleep for frame_delay, but wake up early if shutdown is triggered
             try:
-                await asyncio.wait_for(
-                    asyncio.shield(shutdown_event.wait()),
-                    timeout=frame_delay
-                )
-                break  # shutdown_event was set
+                await asyncio.wait_for(shutdown_event.wait(), timeout=frame_delay)
             except asyncio.TimeoutError:
                 pass  # normal case, keep streaming
 
     except asyncio.CancelledError:
-        logger.info(f"[Client {request_id}] Client disconnected.")
-        pass
+        logger.info(f"[Client {request_id}] Stream cancelled.")
+        raise  # re-raise so uvicorn can clean up the request properly
 
 @app.get("/")
 async def video_feed(request: Request):
@@ -120,4 +108,10 @@ if __name__ == "__main__":
     print(f"Streaming video: {args.video}")
     print(f"Server accessible at: http://{args.host}:{args.port}/")
     
-    uvicorn.run(app, host=args.host, port=args.port)
+    config = uvicorn.Config(app, host=args.host, port=args.port)
+    server = uvicorn.Server(config)
+    app.state.server = server
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        pass
