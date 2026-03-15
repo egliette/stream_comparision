@@ -5,7 +5,18 @@
         <link rel="stylesheet" href="/static/style.css">
     </head>
     <body>
-        <img id="stream" src="" />
+        <div class="container">
+            <header>
+                <h1 id="stream-title">Video Stream</h1>
+                <nav>
+                    <a href="/mjpeg" id="nav-mjpeg" class="nav-btn">MJPEG</a>
+                    <a href="/websocket" id="nav-websocket" class="nav-btn">WebSocket</a>
+                </nav>
+            </header>
+            <main>
+                <img id="stream" src="" />
+            </main>
+        </div>
         <script src="/static/stream.js"></script>
     </body>
 </html>

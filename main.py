@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, Request, WebSocket
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from stream_handler.mjpeg import generate_frames as mjpeg_generate_frames
@@ -18,7 +18,6 @@ logger = get_logger(__name__)
 async def lifespan(app: FastAPI):
     res_logger = ResourceLogger(log_interval=10)
     res_logger.start()
-
 
     video_reader = BackgroundVideoReader(app.state.video_path)
     video_reader.start()
@@ -39,12 +38,17 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 async def websocket_stream(websocket: WebSocket):
     await websocket_generate_frames(websocket)
 
-@app.get("/mjpeg/")
+@app.get("/mjpeg_stream")
 async def mjpeg_stream(request: Request):
     return StreamingResponse(mjpeg_generate_frames(request),
                              media_type="multipart/x-mixed-replace; boundary=frame")
 
 @app.get("/")
+async def root():
+    return RedirectResponse(url="/mjpeg")
+
+@app.get("/mjpeg")
+@app.get("/websocket")
 async def index():
     return FileResponse("static/index.html")
 
