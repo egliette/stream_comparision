@@ -20,9 +20,9 @@ async def lifespan(app: FastAPI):
     res_logger = ResourceLogger(log_interval=10)
     res_logger.start()
 
-    # Start the video reader background thread
     video_reader = BackgroundVideoReader(app.state.video_path, shutdown_event)
     video_reader.start()
+
     app.state.video_reader = video_reader
 
     try:
@@ -48,9 +48,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     app.state.video_path = args.video
     
-    print(f"Starting server...")
-    print(f"Streaming video: {args.video}")
-    print(f"Server accessible at: http://{args.host}:{args.port}/")
+    logger.info(f"Server accessible at: http://{args.host}:{args.port}/")
     
     config = uvicorn.Config(app, host=args.host, port=args.port)
     server = uvicorn.Server(config)

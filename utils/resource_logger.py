@@ -1,7 +1,8 @@
 import csv
-import logging
 import os
+import statistics
 import threading
+from collections import deque
 from datetime import datetime
 
 import psutil
@@ -17,7 +18,9 @@ class ResourceLogger:
         self.proc = psutil.Process(os.getpid())
         self._running = False
         self._thread = None
-        self._stop_event = threading.Event()  # <-- add this
+        self._stop_event = threading.Event()
+        self._cpu_history = deque(maxlen=3600)
+        self._ram_history = deque(maxlen=3600)
 
         if self._csv_path:
             with open(self._csv_path, "w", newline="") as f:
@@ -33,7 +36,7 @@ class ResourceLogger:
 
     def stop(self):
         self._running = False
-        self._stop_event.set()  # wake up the sleeping thread immediately
+        self._stop_event.set()
         if self._thread and self._thread.is_alive():
             self._thread.join()
 
@@ -46,13 +49,35 @@ class ResourceLogger:
                 cpu = sum(p.cpu_percent(interval=1) for p in all_procs)
                 ram = sum(p.memory_info().rss for p in all_procs) / 1024**2
                 threads = sum(p.num_threads() for p in all_procs)
+
+                self._cpu_history.append(cpu)
+                self._ram_history.append(ram)
+                
+                cpu_avg = statistics.mean(self._cpu_history)
+                ram_avg = statistics.mean(self._ram_history)
+                
+                if len(self._cpu_history) > 1:
+                    cpu_q = statistics.quantiles(self._cpu_history, n=100)
+                    cpu_p90, cpu_p95 = cpu_q[89], cpu_q[94]
+                else:
+                    cpu_p90 = cpu_p95 = cpu
+
+                if len(self._ram_history) > 1:
+                    ram_q = statistics.quantiles(self._ram_history, n=100)
+                    ram_p90, ram_p95 = ram_q[89], ram_q[94]
+                else:
+                    ram_p90 = ram_p95 = ram
             
                 current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 if self._csv_path:
                     with open(self._csv_path, "a", newline="") as f:
                         csv.writer(f).writerow([current_time, cpu, ram, threads, len(children)])
                 
-                logger.info(f"Resource Usage: CPU: {cpu:.1f}%, RAM: {ram:.1f}MB, Threads: {threads}, Children: {len(children)}") 
+                logger.info(
+                    f"Resource Usage: CPU: {cpu:.1f}% (Avg: {cpu_avg:.1f}%, p90: {cpu_p90:.1f}%, p95: {cpu_p95:.1f}%) | \n "
+                    f"RAM: {ram:.1f}MB (Avg: {ram_avg:.1f}MB, p90: {ram_p90:.1f}MB, p95: {ram_p95:.1f}MB) | \n "
+                    f"Threads: {threads} | Children: {len(children)}"
+                )
             except Exception as e:
                 logger.error(f"Error logging resources: {e}")
 

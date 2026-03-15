@@ -4,6 +4,9 @@ from collections import deque
 
 import cv2
 
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 class BackgroundVideoReader:
     """
@@ -15,14 +18,13 @@ class BackgroundVideoReader:
         self.shutdown_event = shutdown_event
         self.cap = cv2.VideoCapture(self.video_path)
         if not self.cap.isOpened():
-            print(f"Error: Could not open video at {self.video_path}")
+            logger.error(f"Error: Could not open video at {self.video_path}")
             self.fps = 30.0
         else:
             self.fps = self.cap.get(cv2.CAP_PROP_FPS)
             if self.fps <= 0:
                 self.fps = 30.0
 
-        # Queue with maxsize equal to video FPS
         self.frame_queue = deque(maxlen=int(self.fps))
         self.running = False
         self.thread = None
@@ -37,7 +39,7 @@ class BackgroundVideoReader:
 
     def stop(self):
         self.running = False
-        self.shutdown_event.set()  # Trigger all stream generators checking this event to stop
+        self.shutdown_event.set()
         if self.thread and self.thread.is_alive():
             self.thread.join()
         if self.cap:
@@ -55,7 +57,6 @@ class BackgroundVideoReader:
              time.sleep(self.frame_delay)
 
     def get_latest_frame(self):
-        # Just read the latest frame without popping
         if len(self.frame_queue) > 0:
             return self.frame_queue[-1]
         return None
