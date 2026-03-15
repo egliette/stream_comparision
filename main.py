@@ -1,5 +1,4 @@
 import argparse
-import asyncio
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -13,21 +12,20 @@ from utils.video_reader import BackgroundVideoReader
 
 logger = get_logger(__name__)
 
-shutdown_event = asyncio.Event()
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     res_logger = ResourceLogger(log_interval=10)
     res_logger.start()
 
-    video_reader = BackgroundVideoReader(app.state.video_path, shutdown_event)
-    video_reader.start()
 
+    video_reader = BackgroundVideoReader(app.state.video_path)
+    video_reader.start()
     app.state.video_reader = video_reader
 
     try:
         yield
     finally:
+        logger.info("Closing server")
         video_reader.stop()
         res_logger.stop()
 
@@ -36,7 +34,7 @@ app.state.video_path = "videos/street.mp4"
 
 @app.get("/")
 async def video_feed(request: Request):
-    return StreamingResponse(generate_frames(request, shutdown_event),
+    return StreamingResponse(generate_frames(request),
                              media_type="multipart/x-mixed-replace; boundary=frame")
 
 if __name__ == "__main__":

@@ -1,26 +1,28 @@
 import asyncio
 import time
 import uuid
+from collections import deque
 
 import cv2
 from fastapi import Request
 
 from utils.logger import get_logger
+from utils.video_reader import BackgroundVideoReader
 
 logger = get_logger(__name__)
 
-async def generate_frames(request: Request, shutdown_event: asyncio.Event):
-    reader = request.app.state.video_reader
+async def generate_frames(request: Request):
+    reader: BackgroundVideoReader = request.app.state.video_reader
     frame_delay = 1.0 / reader.fps
 
     request_id = str(uuid.uuid4())[:8]
     logger.info(f"[Client {request_id}] Client connected.")
 
-    frames_sent = 0
+    frame_timestamps = deque(maxlen=int(reader.fps * 10))
     last_log_time = time.time()
 
     try:
-        while not shutdown_event.is_set():
+        while True:
             server = getattr(request.app.state, "server", None)
             if server and server.should_exit:
                 break
@@ -44,21 +46,22 @@ async def generate_frames(request: Request, shutdown_event: asyncio.Event):
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
-            frames_sent += 1
             current_time = time.time()
-            elapsed = current_time - last_log_time
-            if elapsed >= 10.0:
-                fps = frames_sent / elapsed
+            frame_timestamps.append(current_time)
+            
+            if current_time - last_log_time >= 10.0:
+                if len(frame_timestamps) > 1:
+                    window_elapsed = frame_timestamps[-1] - frame_timestamps[0]
+                    fps = (len(frame_timestamps) - 1) / window_elapsed if window_elapsed > 0 else 0.0
+                else:
+                    fps = 0.0
+                
                 logger.info(f"[Client {request_id}] Streaming at {fps:.2f} FPS")
-                frames_sent = 0
                 last_log_time = current_time
 
-            # Sleep for frame_delay, but wake up early if shutdown is triggered
-            try:
-                await asyncio.wait_for(shutdown_event.wait(), timeout=frame_delay)
-            except asyncio.TimeoutError:
-                pass  # normal case, keep streaming
+            await asyncio.sleep(frame_delay)
 
     except asyncio.CancelledError:
-        logger.info(f"[Client {request_id}] Stream cancelled.")
         raise  # re-raise so uvicorn can clean up the request properly
+    finally:
+        logger.info(f"[Client {request_id}] Stream closed.")

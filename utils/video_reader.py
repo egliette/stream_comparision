@@ -13,9 +13,8 @@ class BackgroundVideoReader:
     Reads video frames in a background thread and stores them in a fixed-size queue
     to decouple frame capture from stream transmission.
     """
-    def __init__(self, video_path, shutdown_event):
+    def __init__(self, video_path):
         self.video_path = video_path
-        self.shutdown_event = shutdown_event
         self.cap = cv2.VideoCapture(self.video_path)
         if not self.cap.isOpened():
             logger.error(f"Error: Could not open video at {self.video_path}")
@@ -39,14 +38,13 @@ class BackgroundVideoReader:
 
     def stop(self):
         self.running = False
-        self.shutdown_event.set()
         if self.thread and self.thread.is_alive():
-            self.thread.join()
+            self.thread.join(timeout=5)
         if self.cap:
             self.cap.release()
 
     def _run(self):
-        while self.running and not self.shutdown_event.is_set():
+        while self.running:
              success, frame = self.cap.read()
              if not success:
                  self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -55,6 +53,7 @@ class BackgroundVideoReader:
              self.frame_queue.append(frame)
              # Mimic the video's original FPS
              time.sleep(self.frame_delay)
+        logger.info("Stop video reader")
 
     def get_latest_frame(self):
         if len(self.frame_queue) > 0:

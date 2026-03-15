@@ -38,7 +38,7 @@ class ResourceLogger:
         self._running = False
         self._stop_event.set()
         if self._thread and self._thread.is_alive():
-            self._thread.join()
+            self._thread.join(timeout=5)
 
     def _run(self):
         while self._running:
@@ -74,13 +74,14 @@ class ResourceLogger:
                         csv.writer(f).writerow([current_time, cpu, ram, threads, len(children)])
                 
                 logger.info(
-                    f"Resource Usage: CPU: {cpu:.1f}% (Avg: {cpu_avg:.1f}%, p90: {cpu_p90:.1f}%, p95: {cpu_p95:.1f}%) | \n "
-                    f"RAM: {ram:.1f}MB (Avg: {ram_avg:.1f}MB, p90: {ram_p90:.1f}MB, p95: {ram_p95:.1f}MB) | \n "
-                    f"Threads: {threads} | Children: {len(children)}"
+                    f"Resource Usage: \n"
+                    f"  CPU: {cpu:.1f}% (Avg: {cpu_avg:.1f}%, p90: {cpu_p90:.1f}%, p95: {cpu_p95:.1f}%) | \n"
+                    f"  RAM: {ram:.1f}MB (Avg: {ram_avg:.1f}MB, p90: {ram_p90:.1f}MB, p95: {ram_p95:.1f}MB) | \n"
+                    f"  Threads: {threads} | Children: {len(children)}"
                 )
             except Exception as e:
                 logger.error(f"Error logging resources: {e}")
-
-            # Instead of time.sleep(N), wait on the event with a timeout
-            # If stop() is called, the event fires and we exit immediately
+            
             self._stop_event.wait(timeout=self._log_interval)
+
+        logger.info("Stop resource logger")
