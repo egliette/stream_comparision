@@ -1,0 +1,15 @@
+body {
+    background-color: #111;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+}
+
+img {
+    max-width: 90%;
+    max-height: 90%;
+    border: 2px solid #333;
+    object-fit: contain;
+}

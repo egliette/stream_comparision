@@ -2,10 +2,12 @@ import argparse
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, Request, WebSocket
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
-from services.mjpeg_stream_handler import generate_frames as mjpeg_generate_frames
+from stream_handler.mjpeg import generate_frames as mjpeg_generate_frames
+from stream_handler.websocket import generate_frames as websocket_generate_frames
 from utils.logger import get_logger
 from utils.resource_logger import ResourceLogger
 from utils.video_reader import BackgroundVideoReader
@@ -31,11 +33,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Simple Video Stream", lifespan=lifespan)
 app.state.video_path = "videos/street.mp4"
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.websocket("/ws")
+async def websocket_stream(websocket: WebSocket):
+    await websocket_generate_frames(websocket)
 
 @app.get("/mjpeg/")
 async def mjpeg_stream(request: Request):
     return StreamingResponse(mjpeg_generate_frames(request),
                              media_type="multipart/x-mixed-replace; boundary=frame")
+
+@app.get("/")
+async def index():
+    return FileResponse("static/index.html")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
