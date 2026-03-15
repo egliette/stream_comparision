@@ -1,11 +1,11 @@
 import asyncio
 import time
 import uuid
-from collections import deque
 
 import cv2
 from fastapi import Request
 
+from utils.fps_logger import FPSLogger
 from utils.logger import get_logger
 from utils.video_reader import BackgroundVideoReader
 
@@ -18,8 +18,7 @@ async def generate_frames(request: Request):
     request_id = str(uuid.uuid4())[:8]
     logger.info(f"[Client {request_id}] Client connected.")
 
-    frame_timestamps = deque(maxlen=int(reader.fps * 10))
-    last_log_time = time.time()
+    fps_logger = FPSLogger(request_id, window_size=10)
 
     try:
         while True:
@@ -47,17 +46,7 @@ async def generate_frames(request: Request):
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
             current_time = time.time()
-            frame_timestamps.append(current_time)
-            
-            if current_time - last_log_time >= 10.0:
-                if len(frame_timestamps) > 1:
-                    window_elapsed = frame_timestamps[-1] - frame_timestamps[0]
-                    fps = (len(frame_timestamps) - 1) / window_elapsed if window_elapsed > 0 else 0.0
-                else:
-                    fps = 0.0
-                
-                logger.info(f"[Client {request_id}] Streaming at {fps:.2f} FPS")
-                last_log_time = current_time
+            fps_logger.log_frame(current_time)
 
             await asyncio.sleep(frame_delay)
 
