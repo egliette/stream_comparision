@@ -1,5 +1,7 @@
 import time
 
+import cv2
+
 from utils.fps_logger import FPSLogger
 from utils.video_reader import BackgroundVideoReader
 
@@ -11,16 +13,21 @@ class FrameProcessor:
         self._last_frame_id = -1
 
     async def get_encoded_frame(self) -> bytes | None:
-        latest = self._video_reader.get_latest_frame_buffer()
+        latest = self._video_reader.get_latest_frame()
         if latest is None:
             return None
         
-        frame_id, encoded_bytes = latest
+        frame_id, frame = latest
         if frame_id <= self._last_frame_id:
             return None
 
         self._last_frame_id = frame_id
+        
+        ret, buffer = cv2.imencode('.jpg', frame)
+        if not ret:
+            return None
+
         current_time = time.time()
         self._fps_logger.log_frame(current_time)
 
-        return encoded_bytes
+        return buffer.tobytes()

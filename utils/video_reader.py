@@ -24,7 +24,7 @@ class BackgroundVideoReader:
             if self.fps <= 0:
                 self.fps = 30.0
 
-        self.frame_queue = deque(maxlen=int(self.fps))
+        self.frame_queue = deque(maxlen=1)
         self._frame_id = 0
         self.running = False
         self.thread = None
@@ -54,10 +54,8 @@ class BackgroundVideoReader:
                 next_frame_time = time.time()
                 continue
             
-            ret, buffer = cv2.imencode('.jpg', frame)
-            if ret:
-                self._frame_id += 1
-                self.frame_queue.append((self._frame_id, buffer.tobytes()))
+            self._frame_id += 1
+            self.frame_queue.append((self._frame_id, frame.copy()))
             
             next_frame_time += self.frame_delay
             sleep_time = next_frame_time - time.time()
@@ -69,7 +67,7 @@ class BackgroundVideoReader:
                 
         logger.info("Stop video reader")
 
-    def get_latest_frame_buffer(self) -> tuple[int, any] | None:
+    def get_latest_frame(self) -> tuple[int, any] | None:
         if len(self.frame_queue) > 0:
             return self.frame_queue[-1]
         return None
