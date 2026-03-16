@@ -55,7 +55,8 @@ class BackgroundVideoReader:
                 continue
             
             self._frame_id += 1
-            self.frame_queue.append((self._frame_id, frame.copy()))
+            capture_time = time.time()
+            self.frame_queue.append((self._frame_id, capture_time, frame.copy()))
             
             next_frame_time += self.frame_delay
             sleep_time = next_frame_time - time.time()
@@ -67,7 +68,7 @@ class BackgroundVideoReader:
                 
         logger.info("Stop video reader")
 
-    def get_latest_frame(self) -> tuple[int, any] | None:
+    def get_latest_frame(self) -> tuple[int, float, any] | None:
         if len(self.frame_queue) > 0:
             return self.frame_queue[-1]
         return None

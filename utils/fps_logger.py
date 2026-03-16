@@ -36,6 +36,9 @@ class FPSLogger:
             )
             self._last_log_time = current_time
 
+    def get_fps(self):
+        return self._calculate_current_fps()
+
     def _calculate_current_fps(self):
         if len(self._frame_timestamps) < 2:
             return 0.0

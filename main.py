@@ -11,6 +11,7 @@ from stream_handler.mjpeg import generate_frames as mjpeg_generate_frames
 from stream_handler.websocket import generate_frames as websocket_generate_frames
 from utils.logger import get_logger
 from utils.resource_logger import ResourceLogger
+from utils.stats import registry
 from utils.video_reader import BackgroundVideoReader
 
 logger = get_logger(__name__)
@@ -19,6 +20,7 @@ logger = get_logger(__name__)
 async def lifespan(app: FastAPI):
     res_logger = ResourceLogger(log_interval=10)
     res_logger.start()
+    app.state.res_logger = res_logger
 
     video_reader = BackgroundVideoReader(app.state.video_path)
     video_reader.start()
@@ -55,6 +57,19 @@ async def webrtc_offer(request: Request):
     video_reader = request.app.state.video_reader
     pcs = request.app.state.pcs
     return await webrtc.offer(params, video_reader, pcs)
+
+@app.get("/stats")
+async def get_stats(request: Request):
+    res_stats = request.app.state.res_logger.get_latest_resources()
+    return {
+        "clients": registry.get_active_clients_count(),
+        "total_bandwidth_mbps": registry.get_total_bandwidth_mbps(),
+        "total_bandwidth_mb": registry.get_total_mb(),
+        "fps": registry.get_max_fps(),
+        "latency": registry.get_avg_latency(),
+        "cpu": res_stats["cpu"],
+        "ram": res_stats["ram"]
+    }
 
 @app.get("/")
 async def root():

@@ -14,6 +14,32 @@
                     <a href="/webrtc" id="nav-webrtc" class="nav-btn">WebRTC</a>
                 </nav>
             </header>
+            <div class="stats-dashboard">
+                <div class="stat-card">
+                    <span class="stat-label">FPS</span>
+                    <span id="stat-fps" class="stat-value">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Latency</span>
+                    <span id="stat-latency" class="stat-value">0</span>
+                    <span class="stat-unit">ms</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Bandwidth</span>
+                    <span id="stat-bandwidth" class="stat-value">0</span>
+                    <span class="stat-unit">Mbps</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">CPU (Server)</span>
+                    <span id="stat-cpu" class="stat-value">0</span>
+                    <span class="stat-unit">%</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">RAM (Server)</span>
+                    <span id="stat-ram" class="stat-value">0</span>
+                    <span class="stat-unit">MB</span>
+                </div>
+            </div>
             <main>
                 <img id="stream" src="" />
                 <video id="web-video" class="hidden" autoplay playsinline muted></video>

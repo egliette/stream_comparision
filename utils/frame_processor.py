@@ -1,4 +1,5 @@
 import time
+import struct
 
 import cv2
 
@@ -17,7 +18,7 @@ class FrameProcessor:
         if latest is None:
             return None
         
-        frame_id, frame = latest
+        frame_id, capture_time, frame = latest
         if frame_id <= self._last_frame_id:
             return None
 
@@ -30,4 +31,17 @@ class FrameProcessor:
         current_time = time.time()
         self._fps_logger.log_frame(current_time)
 
-        return buffer.tobytes()
+        # Prepend timestamp (8-byte float) to the frame bytes
+        # Note: This makes the buffer slightly longer. Handlers need to know this.
+        # Alternatively, for MJPEG we might NOT want to break the JPEG header for the browser.
+        # So let's provide a version with and without metadata.
+        return buffer.tobytes(), capture_time
+
+    async def get_encoded_frame_with_timestamp(self) -> bytes | None:
+        result = await self.get_encoded_frame()
+        if result is None:
+            return None
+        
+        frame_bytes, capture_time = result
+        # Pack timestamp as double (8 bytes)
+        return struct.pack("!d", capture_time) + frame_bytes
