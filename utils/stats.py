@@ -29,10 +29,6 @@ class StatsRegistry:
         with self._lock:
             return sum(c.bandwidth.get_bandwidth_mbps() for c in self._clients.values())
 
-    def get_total_bandwidth_byte_rate(self) -> float:
-        with self._lock:
-            return sum(c.bandwidth.get_bandwidth_byte_rate() for c in self._clients.values())
-
     def get_total_mb(self) -> float:
         with self._lock:
             return sum(c.bandwidth.get_total_mb() for c in self._clients.values())

@@ -1,5 +1,4 @@
 import time
-import struct
 
 import cv2
 
@@ -36,12 +35,3 @@ class FrameProcessor:
         # Alternatively, for MJPEG we might NOT want to break the JPEG header for the browser.
         # So let's provide a version with and without metadata.
         return buffer.tobytes(), capture_time
-
-    async def get_encoded_frame_with_timestamp(self) -> bytes | None:
-        result = await self.get_encoded_frame()
-        if result is None:
-            return None
-        
-        frame_bytes, capture_time = result
-        # Pack timestamp as double (8 bytes)
-        return struct.pack("!d", capture_time) + frame_bytes

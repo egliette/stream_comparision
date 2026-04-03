@@ -1,0 +1,2 @@
+cam_1: rtsp://localhost:8554/cam_1
+cam_2: rtsp://localhost:8554/cam_2

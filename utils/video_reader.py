@@ -13,15 +13,15 @@ class BackgroundVideoReader:
     Reads video frames in a background thread and stores them in a fixed-size queue
     to decouple frame capture from stream transmission.
     """
-    def __init__(self, video_path):
-        self.video_path = video_path
-        self.cap = cv2.VideoCapture(self.video_path)
+    def __init__(self, rtsp_url):
+        self.rtsp_url = rtsp_url
+        self.cap = cv2.VideoCapture(self.rtsp_url)
         if not self.cap.isOpened():
-            logger.error(f"Error: Could not open video at {self.video_path}")
+            logger.error(f"Error: Could not open stream at {self.rtsp_url}")
             self.fps = 30.0
         else:
             self.fps = self.cap.get(cv2.CAP_PROP_FPS)
-            if self.fps <= 0:
+            if self.fps <= 0 or self.fps > 120:
                 self.fps = 30.0
 
         self.frame_queue = deque(maxlen=1)
@@ -48,23 +48,26 @@ class BackgroundVideoReader:
         next_frame_time = time.time()
         
         while self.running:
+            if not self.cap.isOpened():
+                time.sleep(1)
+                self.cap = cv2.VideoCapture(self.rtsp_url)
+                continue
+
             success, frame = self.cap.read()
             if not success:
-                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                next_frame_time = time.time()
+                logger.warning(f"Failed to read frame from {self.rtsp_url}, reconnecting...")
+                self.cap.release()
+                time.sleep(1)
                 continue
             
             self._frame_id += 1
             capture_time = time.time()
             self.frame_queue.append((self._frame_id, capture_time, frame.copy()))
             
-            next_frame_time += self.frame_delay
-            sleep_time = next_frame_time - time.time()
-            
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-            elif sleep_time < -1.0:
-                next_frame_time = time.time()
+            # Read as fast as possible for real-time RTSP or let cv2 handle timing
+            # If the RTSP stream controls timing, cap.read() blocks appropriately.
+            # But just in case, we can yield slightly to avoid pegging CPU if it's too fast.
+            time.sleep(0.001)
                 
         logger.info("Stop video reader")
 

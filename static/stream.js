@@ -5,9 +5,17 @@ const navMjpeg = document.getElementById('nav-mjpeg');
 const navWebsocket = document.getElementById('nav-websocket');
 const navWebrtc = document.getElementById('nav-webrtc');
 
-const path = window.location.pathname;
+const pathParts = window.location.pathname.split('/').filter(p => p);
+const protocol = pathParts.length > 0 ? pathParts[0] : 'mjpeg';
+const streamId = pathParts.length > 1 ? pathParts[1] : 'stream_1';
+
+document.getElementById('nav-mjpeg').href = `/mjpeg/${streamId}`;
+document.getElementById('nav-websocket').href = `/websocket/${streamId}`;
+document.getElementById('nav-webrtc').href = `/webrtc/${streamId}`;
+
 let currentWs = null;
 let currentPc = null;
+let currentStatsInterval = null;
 
 function stopCurrentStream() {
     // Stop MJPEG
@@ -30,6 +38,11 @@ function stopCurrentStream() {
     }
 
     // Stop WebRTC PeerConnection
+    if (currentStatsInterval) {
+        clearInterval(currentStatsInterval);
+        currentStatsInterval = null;
+    }
+
     if (currentPc) {
         currentPc.close();
         currentPc = null;
@@ -87,7 +100,7 @@ function startMjpeg() {
     streamTitle.textContent = "MJPEG Stream";
     navMjpeg.classList.add('active');
     img.classList.remove('hidden');
-    img.src = "/mjpeg_stream";
+    img.src = `/mjpeg_stream/${streamId}`;
     
     img.onload = () => {
         updateClientStats(undefined, 0); // We don't know bytes easily, but we count the frame
@@ -100,18 +113,16 @@ function startWebsocket() {
     navWebsocket.classList.add('active');
     img.classList.remove('hidden');
 
-    const ws = new WebSocket(`ws://${location.host}/ws`);
+    const ws = new WebSocket(`ws://${location.host}/ws/${streamId}`);
     ws.binaryType = 'blob';
     currentWs = ws;
 
     ws.onmessage = async (event) => {
         const data = await event.data.arrayBuffer();
         
-        // First 8 bytes is the 64-bit float timestamp
+        // First 8 bytes is the 64-bit float latency calculated by the server
         const view = new DataView(data);
-        const serverTimestamp = view.getFloat64(0, false); // big-endian
-        const clientTimestamp = Date.now() / 1000;
-        const latencyMs = (clientTimestamp - serverTimestamp) * 1000;
+        const serverLatencyMs = view.getFloat64(0, false); // big-endian
         
         const imageBlob = event.data.slice(8);
         const url = URL.createObjectURL(imageBlob);
@@ -122,7 +133,7 @@ function startWebsocket() {
             URL.revokeObjectURL(oldUrl);
         }
         
-        updateClientStats(latencyMs, data.byteLength);
+        updateClientStats(serverLatencyMs, data.byteLength);
     };
 }
 
@@ -138,36 +149,27 @@ async function startWebRTC() {
     pc.ontrack = (event) => {
         video.srcObject = event.streams[0] ?? new MediaStream([event.track]);
         video.play().catch(e => console.error("Error playing video:", e));
-        
-        // Track FPS for WebRTC (latency is hard to get without stats API)
-        const track = event.track;
-        const stream = event.streams[0];
     };
-    
+
     // Poll stats for WebRTC
-    const statsInterval = setInterval(async () => {
-        if (!currentPc) {
-            clearInterval(statsInterval);
-            return;
-        }
+    let lastWebRTCStats = null;
+    currentStatsInterval = setInterval(async () => {
+        if (!currentPc) return;
         const stats = await currentPc.getStats();
         stats.forEach(report => {
             if (report.type === 'inbound-rtp' && report.kind === 'video') {
-                // We can calculate FPS and Bandwidth from stats
-                // report.framesDecoded, report.bytesReceived, report.jitter, etc.
-                // For simplicity, we'll just show the bytes received diff
                 const now = Date.now();
-                if (this.lastWebRTCStats) {
-                    const dt = (now - this.lastWebRTCStats.time) / 1000;
-                    const db = report.bytesReceived - this.lastWebRTCStats.bytes;
+                if (lastWebRTCStats) {
+                    const dt = (now - lastWebRTCStats.time) / 1000;
+                    const db = report.bytesReceived - lastWebRTCStats.bytes;
                     const mbps = ((db * 8) / (1024 * 1024 * dt)).toFixed(2);
                     document.getElementById('stat-bandwidth').textContent = mbps;
-                    
-                    const df = report.framesDecoded - this.lastWebRTCStats.frames;
+
+                    const df = report.framesDecoded - lastWebRTCStats.frames;
                     const fps = (df / dt).toFixed(1);
                     document.getElementById('stat-fps').textContent = fps;
                 }
-                this.lastWebRTCStats = { time: now, bytes: report.bytesReceived, frames: report.framesDecoded };
+                lastWebRTCStats = { time: now, bytes: report.bytesReceived, frames: report.framesDecoded };
             }
         });
     }, 1000);
@@ -177,7 +179,7 @@ async function startWebRTC() {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    const response = await fetch('/offer', {
+    const response = await fetch(`/offer/${streamId}`, {
         method: 'POST',
         body: JSON.stringify({
             sdp: pc.localDescription.sdp,
@@ -191,9 +193,9 @@ async function startWebRTC() {
 }
 
 // Initial Navigation
-if (path === "/websocket") {
+if (protocol === "websocket") {
     startWebsocket();
-} else if (path === "/webrtc") {
+} else if (protocol === "webrtc") {
     startWebRTC();
 } else {
     startMjpeg();
@@ -208,8 +210,8 @@ setInterval(async () => {
         document.getElementById('stat-cpu').textContent = stats.cpu.toFixed(1);
         document.getElementById('stat-ram').textContent = stats.ram.toFixed(0);
         
-        const isMjpeg = window.location.pathname === "/mjpeg" || window.location.pathname === "/";
-        const isWebRTC = window.location.pathname === "/webrtc";
+        const isMjpeg = protocol === "mjpeg" || protocol === "";
+        const isWebRTC = protocol === "webrtc";
 
         if (isMjpeg) {
              document.getElementById('stat-bandwidth').textContent = stats.total_bandwidth_mbps.toFixed(2);

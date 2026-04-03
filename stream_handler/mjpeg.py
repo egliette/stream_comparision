@@ -13,13 +13,13 @@ from utils.stats import registry
 logger = get_logger(__name__)
 
 
-async def generate_frames(request: Request):
+async def generate_frames(request: Request, stream_id: str):
     request_id = str(uuid.uuid4())[:8]
     logger.info(f"[Client {request_id}] Client connected.")
 
     app_state = request.app.state
     fps_logger = FPSLogger(request_id, window_size=10)
-    frame_processor = FrameProcessor(app_state.video_reader, fps_logger)
+    frame_processor = FrameProcessor(app_state.video_readers[stream_id], fps_logger)
     client_stats = registry.get_client(request_id)
 
     try:

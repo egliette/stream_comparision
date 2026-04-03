@@ -1,8 +1,9 @@
 import argparse
+import yaml
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI, Request, WebSocket
+from fastapi import FastAPI, Request, WebSocket, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -22,39 +23,58 @@ async def lifespan(app: FastAPI):
     res_logger.start()
     app.state.res_logger = res_logger
 
-    video_reader = BackgroundVideoReader(app.state.video_path)
-    video_reader.start()
-    app.state.video_reader = video_reader
+    app.state.video_readers = {}
+    try:
+        with open("cameras.yaml", "r") as f:
+            cameras = yaml.safe_load(f)
+            if not cameras:
+                cameras = {}
+    except FileNotFoundError:
+        logger.warning("cameras.yaml not found, no streams initialized.")
+        cameras = {}
+
+    for stream_id, rtsp_url in cameras.items():
+        logger.info(f"Initializing stream {stream_id} with url {rtsp_url}")
+        video_reader = BackgroundVideoReader(rtsp_url)
+        video_reader.start()
+        app.state.video_readers[stream_id] = video_reader
+
     app.state.pcs = set()
 
     try:
         yield
     finally:
         logger.info("Closing server")
-        # Close WebRTC connections
         for pc in list(app.state.pcs):
             await pc.close()
         
-        video_reader.stop()
+        for reader in app.state.video_readers.values():
+            reader.stop()
         res_logger.stop()
 
 app = FastAPI(title="Simple Video Stream", lifespan=lifespan)
-app.state.video_path = "videos/street.mp4"
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-@app.websocket("/ws")
-async def websocket_stream(websocket: WebSocket):
-    await websocket_generate_frames(websocket)
+@app.websocket("/ws/{stream_id}")
+async def websocket_stream(websocket: WebSocket, stream_id: str):
+    if stream_id not in websocket.app.state.video_readers:
+        await websocket.close(code=1008)
+        return
+    await websocket_generate_frames(websocket, stream_id)
 
-@app.get("/mjpeg_stream")
-async def mjpeg_stream(request: Request):
-    return StreamingResponse(mjpeg_generate_frames(request),
+@app.get("/mjpeg_stream/{stream_id}")
+async def mjpeg_stream(request: Request, stream_id: str):
+    if stream_id not in request.app.state.video_readers:
+        raise HTTPException(status_code=404, detail="Stream not found")
+    return StreamingResponse(mjpeg_generate_frames(request, stream_id),
                              media_type="multipart/x-mixed-replace; boundary=frame")
 
-@app.post("/offer")
-async def webrtc_offer(request: Request):
+@app.post("/offer/{stream_id}")
+async def webrtc_offer(request: Request, stream_id: str):
+    if stream_id not in request.app.state.video_readers:
+        raise HTTPException(status_code=404, detail="Stream not found")
     params = await request.json()
-    video_reader = request.app.state.video_reader
+    video_reader = request.app.state.video_readers[stream_id]
     pcs = request.app.state.pcs
     return await webrtc.offer(params, video_reader, pcs)
 
@@ -73,22 +93,20 @@ async def get_stats(request: Request):
 
 @app.get("/")
 async def root():
-    return RedirectResponse(url="/mjpeg")
+    return RedirectResponse(url="/mjpeg/stream_1")
 
-@app.get("/mjpeg")
-@app.get("/websocket")
-@app.get("/webrtc")
-async def index():
+@app.get("/mjpeg/{stream_id}")
+@app.get("/websocket/{stream_id}")
+@app.get("/webrtc/{stream_id}")
+async def index(stream_id: str):
     return FileResponse("static/index.html")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--video", "-v", type=str, default="videos/street.mp4")
     parser.add_argument("--host", "-H", type=str, default="0.0.0.0")
     parser.add_argument("--port", "-p", type=int, default=8000)
     
     args = parser.parse_args()
-    app.state.video_path = args.video
     
     logger.info(f"Server accessible at: http://{args.host}:{args.port}/")
     

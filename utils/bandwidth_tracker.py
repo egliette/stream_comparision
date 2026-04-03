@@ -31,15 +31,5 @@ class BandwidthTracker:
             # Bytes to Megabits / window_size
             return (total_window_bytes * 8) / (1024 * 1024 * self._window_size)
 
-    def get_bandwidth_byte_rate(self) -> float:
-        """Returns current bandwidth in MB/s."""
-        with self._lock:
-            now = time.time()
-            self._cleanup(now)
-            if not self._bytes_history:
-                return 0.0
-            total_window_bytes = sum(b for _, b in self._bytes_history)
-            return (total_window_bytes / (1024 * 1024)) / self._window_size
-
     def get_total_mb(self) -> float:
         return self._total_bytes / (1024 * 1024)
